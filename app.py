@@ -2,7 +2,6 @@ import flask
 from flask import Flask, jsonify
 import models
 from datasets import DatasetManager
-import bot
 from models.factory import ModelsFactory
 
 app = Flask(__name__)
@@ -20,20 +19,28 @@ def hello_world():
 
 @app.route('/models/types_list')
 def get_models_types():
+    """Returns all available model types"""
     return jsonify(data=models.__all__)
 
 
 @app.route('/datasets/list')
 def get_datasets():
+    """Returns all available datasets"""
     return jsonify(data=dm.get_datasets())
 
 
 @app.route('/models/user_models_list')
 def get_users_models():
+    """Returns all created models"""
     return jsonify(data=list(user_models.keys()))
 
 
 def get_user(data):
+    """
+
+    :param data: request json
+    :return: User_id casted to string or empty string
+    """
     if data and 'user_id' in data:
         return str(data['user_id'])
     else:
@@ -41,6 +48,13 @@ def get_user(data):
 
 
 def process_json(data, model_id, action='train'):
+    """
+    Creates
+    :param data:
+    :param model_id:
+    :param action:
+    :return:
+    """
     values = []
 
     if not data or ('data' not in data and 'df_name') not in data:
@@ -52,7 +66,7 @@ def process_json(data, model_id, action='train'):
         values = dm.get_train(data['df_name']) if action == 'train' else dm.get_test(data['df_name'])
 
     user_id = get_user(data)
-
+    print(user_id)
     pers_model_id = '_'.join([model_id, user_id])
     if pers_model_id not in user_models and action in ('train', 'test'):
         raise ModuleNotFoundError('There is no such model!')
@@ -70,6 +84,11 @@ def process_json(data, model_id, action='train'):
 
 @app.route('/models/create/<model_id>')
 def create_model(model_id):
+    """
+    Create new model
+    :param model_id: id of new model
+    :return: Status of operation
+    """
     data = flask.request.json
     try:
         values, pers_model_id, model = process_json(data, model_id, action='create')
@@ -84,6 +103,11 @@ def create_model(model_id):
 
 @app.route('/models/delete/<model_id>')
 def delete_model(model_id):
+    """
+    Delete model
+    :param model_id: id of model
+    :return: Status of operation
+    """
     data = flask.request.json
     user_id = get_user(data)
 
@@ -96,6 +120,11 @@ def delete_model(model_id):
 
 @app.route('/datasets/load/<df_name>')
 def load_dataset(df_name):
+    """
+    Create new dataset
+    :param df_name: name of dataset
+    :return: Status of operation
+    """
     try:
         data = flask.request.json
         if not data or 'data' not in data or len(data['data']) != 3:
@@ -111,6 +140,11 @@ def load_dataset(df_name):
 
 @app.route('/models/train/<model_id>')
 def train_model(model_id):
+    """
+    Fit model with parameters
+    :param model_id: model_name
+    :return: Status of operation
+    """
     data = flask.request.json
     try:
         values, pers_model_id, _ = process_json(data, model_id, action='train')
@@ -125,6 +159,11 @@ def train_model(model_id):
 
 @app.route('/models/predict/<model_id>')
 def get_predict(model_id):
+    """
+    Predict
+    :param model_id:
+    :return: Status and predicts
+    """
     data = flask.request.json
     try:
         values, pers_model_id, _ = process_json(data, model_id, action='test')
@@ -137,9 +176,6 @@ def get_predict(model_id):
 
     return jsonify(message='OK',
                    values=predicts), 200
-
-
-bot.run()
 
 
 if __name__ == '__main__':

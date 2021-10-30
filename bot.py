@@ -8,6 +8,7 @@ import pandas as pd
 CREATE_ASK_NAME, CREATE_ASK_MODEL_TYPE, CREATE_ASK_PARAMS = range(3)
 LOAD_DATASET_ASK_NAME, LOAD_DATASET_ASK_TARGET, LOAD_DATASET_LOAD_TRAIN, LOAD_DATASET_LOAD_TEST = range(4)
 
+
 HELP_STRING = """Supported commands:
 /create_model - creates new model (interactive)
 /delete_model model_name - deletes model `model_name`
@@ -15,6 +16,10 @@ HELP_STRING = """Supported commands:
 /train model_name df_name - trains model `model_name` over the dataset `df_name`
 /predict model_name df_name - returns predicts of model `model_name` over the dataset `df_name`
 """
+
+config = configparser.ConfigParser()
+config.read("config")
+host_name = config['BOT']['host']
 
 
 def start(update, context):
@@ -87,7 +92,7 @@ def get_test_df(update, context):
 
     test_data = df.values.tolist()
 
-    response = requests.get(f'http://localhost:5000/datasets/load/{context.user_data["df_name"]}',
+    response = requests.get(f'{host_name}/datasets/load/{context.user_data["df_name"]}',
                             json={
                                 'data': [
                                     context.user_data['X_train'],
@@ -119,7 +124,7 @@ def create_new(update, context):
 def get_name(update, context):
     model_name = update.message.text
     context.user_data['model_name'] = model_name
-    reply_keyboard = requests.get('http://localhost:5000/models/types_list').json()['data']
+    reply_keyboard = requests.get('{host_name}/models/types_list').json()['data']
     context.user_data['supported_models'] = reply_keyboard
     update.message.reply_text('Please select type of model',
                               reply_markup=ReplyKeyboardMarkup(
@@ -169,7 +174,7 @@ def get_params(update, context):
         else:
             ignored_params.append(line)
 
-    response = requests.get(f'http://localhost:5000/models/create/{context.user_data["model_name"]}', json={
+    response = requests.get(f'{host_name}/models/create/{context.user_data["model_name"]}', json={
         'user_id': update.effective_chat.id,
         'model_type': context.user_data['model_type'],
         'params': params
@@ -201,7 +206,7 @@ def train(update, context):
                                   f' but you sent {len(args)} parameters')
     else:
         model_name, df_name = args[0], args[1]
-        response = requests.get(f'http://localhost:5000/models/train/{model_name}', json={
+        response = requests.get(f'{host_name}/models/train/{model_name}', json={
             'user_id': update.effective_chat.id,
             'df_name': df_name
         })
@@ -225,7 +230,7 @@ def predict(update, context):
                                   f' but you sent {len(args)} parameters')
     else:
         model_name, df_name = args[0], args[1]
-        response = requests.get(f'http://localhost:5000/models/predict/{model_name}', json={
+        response = requests.get(f'{host_name}/models/predict/{model_name}', json={
             'user_id': update.effective_chat.id,
             'df_name': df_name
         })
@@ -244,8 +249,9 @@ def delete_model(update, context):
     if len(args) != 1:
         update.message.reply_text(f'You should send model_name,'
                                   f' but you sent {len(args)} parameters')
+        return
 
-    response = requests.get(f'http://localhost:5000/models/delete/{args[0]}', json={
+    response = requests.get(f'{host_name}/models/delete/{args[0]}', json={
         'user_id': update.effective_chat.id
     })
 
@@ -262,8 +268,6 @@ def cancel(update, context):
 
 
 def run():
-    config = configparser.ConfigParser()
-    config.read("config")
 
     updater = Updater(token=config['BOT']['token'], use_context=True)
     dispatcher = updater.dispatcher
@@ -305,3 +309,4 @@ def run():
     dispatcher.add_handler(echo_handler2)
 
     updater.start_polling()
+    updater.idle()
