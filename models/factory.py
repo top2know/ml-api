@@ -7,7 +7,6 @@ class ModelsFactory:
     @staticmethod
     def get_model(name, params):
         try:
-            print(params)
             if name == 'DecisionTreeClassifier':
                 return DecisionTreeClassifier(params)
             if name == 'GradientBoostingClassifier':

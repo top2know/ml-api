@@ -1,3 +1,5 @@
 .idea/
 __py*
 config
+*.pickle
+*.DS_Store

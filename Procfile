@@ -1,1 +1,1 @@
-web: gunicorn --workers=2 --timeout=0 wsgi:app
+web: gunicorn wsgi:app & python bot.py
