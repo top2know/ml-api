@@ -1,18 +1,17 @@
 import flask
 from flask import Flask, jsonify, redirect
-import models
 from datasets import DatasetManager
-from user_models import ModelsManager
-from models.factory import ModelsFactory
 from flasgger import Swagger
+import requests
 
 app = Flask(__name__)
 swagger = Swagger(app)
 
+models_host = 'http://host.docker.internal:5001'
 
-mm = ModelsManager()
+# mm = ModelsManager()
 dm = DatasetManager()
-mf = ModelsFactory()
+# mf = ModelsFactory()
 
 
 @app.route('/')
@@ -36,7 +35,7 @@ def get_models_types():
                 type: string
               example: ['DecisionTreeClassifier', 'GradientBoostingClassifier']
     """
-    return jsonify(data=models.__all__)
+    return jsonify(data=['DecisionTreeClassifier', 'GradientBoostingClassifier'])
 
 
 @app.route('/datasets/list')
@@ -80,7 +79,13 @@ def get_users_models():
               example: ['model1', 'model2']
     """
     user = get_user(flask.request)
-    return jsonify(data=list(mm.get_models_for_user(user)))
+    try:
+        response = requests.get(f'{models_host}/get_models', params={
+            'user': user
+        })
+    except Exception:
+        return jsonify(message='Model API didn\'t respond'), 400
+    return response.json(), response.status_code
 
 
 def get_user(req_data):
@@ -118,18 +123,17 @@ def process_json(req_data, model_id, action='train'):
 
     user_id = get_user(req_data)
     pers_model_id = '_'.join([user_id, model_id])
-    if pers_model_id not in mm.get_models() and action in ('train', 'test'):
+    if pers_model_id not in requests.get(f'{models_host}/get_models').json()['data'] and action in ('train', 'test'):
         raise ModuleNotFoundError('There is no such model!')
 
-    model = None
+    model_type = None
+    params = None
 
     if action == 'create':
         model_type = data['model_type'] if data and 'model_type' in data else 'DecisionTreeClassifier'
         params = data['params'] if data and 'params' in data else {}
 
-        model = mf.get_model(model_type, params)
-
-    return values, pers_model_id, model
+    return values, pers_model_id, [model_type, params]
 
 
 @app.route('/models/create/<model_id>', methods=['POST'])
@@ -181,11 +185,16 @@ def create_model(model_id):
     data = flask.request
     try:
         values, pers_model_id, model = process_json(data, model_id, action='create')
+        response = requests.post(f'{models_host}/create', json={
+            'model_name': pers_model_id,
+            'model_type': model[0],
+            'params': model[1]
+        })
     except ValueError as e:
         return jsonify(message=str(e)), 400
-
-    mm.add_model(pers_model_id, model)
-    return jsonify(message='OK'), 200
+    except Exception:
+        return jsonify(message='Model API didn\'t respond'), 400
+    return response.json(), response.status_code
 
 
 @app.route('/models/delete/<model_id>', methods=['DELETE'])
@@ -221,9 +230,13 @@ def delete_model(model_id):
     user_id = get_user(data)
 
     pers_model_id = '_'.join([user_id, model_id])
-    mm.delete_model(pers_model_id)
-
-    return jsonify(message='OK'), 200
+    try:
+        response = requests.get(f'{models_host}/delete', params={
+            'name': pers_model_id
+        })
+    except Exception:
+        return jsonify(message='Model API didn\'t respond'), 400
+    return response.json(), response.status_code
 
 
 @app.route('/datasets/load/<df_name>', methods=['POST'])
@@ -351,13 +364,17 @@ def train_model(model_id):
     data = flask.request
     try:
         values, pers_model_id, _ = process_json(data, model_id, action='train')
-        mm.add_model(pers_model_id, mm.get_model(pers_model_id).fit(*values))
+        response = requests.put(f'{models_host}/train', json={
+            'name': pers_model_id,
+            'values': values
+        })
+        return response.json(), response.status_code
     except ValueError as e:
         return jsonify(message=str(e)), 400
     except ModuleNotFoundError as e:
         return jsonify(message=str(e)), 404
-
-    return jsonify(message='OK'), 200
+    except Exception:
+        return jsonify(message='Model API didn\'t respond'), 400
 
 
 @app.route('/models/predict/<model_id>')
@@ -420,16 +437,17 @@ def get_predict(model_id):
     data = flask.request
     try:
         values, pers_model_id, _ = process_json(data, model_id, action='test')
-        model = mm.get_model(pers_model_id)
-        predicts = list(map(int, model.predict(values)))
+        response = requests.put(f'{models_host}/predict', json={
+            'name': pers_model_id,
+            'values': values
+        })
+        return response.json(), response.status_code
     except ValueError as e:
         return jsonify(message=str(e)), 400
     except ModuleNotFoundError as e:
         return jsonify(message=str(e)), 404
-
-    return jsonify(message='OK',
-                   features=values,
-                   targets=predicts), 200
+    except Exception:
+        return jsonify(message='Model API didn\'t respond'), 400
 
 
 if __name__ == '__main__':

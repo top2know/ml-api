@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:latest
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: 'password'
+
+  api_app:
+    build: ./api_app
+    ports:
+      - 5000:5000
+
+  models_app:
+    build: ./models_app
+    ports:
+      - 5001:5001

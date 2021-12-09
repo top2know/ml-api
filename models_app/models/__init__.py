@@ -1,4 +1,4 @@
-from models import GradientBoostingClassifier
+from models import *
 
 __all__ = [
     'DecisionTreeClassifier',
