@@ -7,11 +7,11 @@ services:
       POSTGRES_PASSWORD: 'password'
 
   api_app:
-    image: top2know/api_app:0.1
+    build: ./api_app
     ports:
       - 5000:5000
 
   models_app:
-    image: top2know/models_app:0.1
+    build: ./models_app
     ports:
       - 5001:5001
