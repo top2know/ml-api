@@ -1,11 +1,23 @@
 import flask
-from flask import Flask, jsonify, redirect
+from flask import Flask, jsonify, redirect, request
 from datasets import DatasetManager
 from flasgger import Swagger
+from prometheus_flask_exporter import PrometheusMetrics
+
 import requests
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
 swagger = Swagger(app)
+
+metrics.register_default(
+    metrics.counter(
+        'cnt_hits_by_code', 'Hits counter by response code',
+        labels={'code': lambda resp: resp.status_code}
+    )
+)
+
+metrics.info('api_app', 'My API App', version='1.0.0')
 
 models_host = 'http://host.docker.internal:5001'
 
@@ -15,6 +27,8 @@ dm = DatasetManager()
 
 
 @app.route('/')
+@metrics.counter('cnt_main', 'Number of redirects to docs', labels={
+    'status': lambda resp: resp.status_code})
 def hello_world():
     return redirect('/apidocs')
 
@@ -119,82 +133,21 @@ def process_json(req_data, model_id, action='train'):
             values = data['data']
         elif (data and 'df_name' in data) or df_name_from_args:
             df_name = data['df_name'] if (data and 'df_name' in data) else df_name_from_args
-            values = dm.get_train(df_name) if action == 'train' else dm.get_test(df_name)
+            values = dm.get_train(df_name) if action in ['train', 'create_and_train'] else dm.get_test(df_name)
 
     user_id = get_user(req_data)
     pers_model_id = '_'.join([user_id, model_id])
-    if pers_model_id not in requests.get(f'{models_host}/get_models').json()['data'] and action in ('train', 'test'):
+    if action in ('train', 'test') and pers_model_id not in requests.get(f'{models_host}/get_models').json()['data']:
         raise ModuleNotFoundError('There is no such model!')
 
     model_type = None
     params = None
 
-    if action == 'create':
+    if action in ['create', 'create_and_train']:
         model_type = data['model_type'] if data and 'model_type' in data else 'DecisionTreeClassifier'
         params = data['params'] if data and 'params' in data else {}
 
     return values, pers_model_id, [model_type, params]
-
-
-@app.route('/models/create/<model_id>', methods=['POST'])
-def create_model(model_id):
-    """Creates new model
-    ---
-    parameters:
-      - name: model_id
-        in: path
-        type: string
-        required: true
-      - name: data
-        in: body
-        type: object
-        required: false
-        schema:
-          type: object
-          properties:
-            model_type:
-              type: string
-              example: DecisionTreeClassifier
-            params:
-              type: object
-              properties:
-                model_parameter:
-                  type: string
-              example: {max_depth: 3}
-            user_id:
-              type: string
-              example: 123456
-    responses:
-      200:
-        description: Status of successful operation
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-              example: 'OK'
-      400:
-        description: Some input data was bad
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-              example: 'There is no support of model SomeModel yet!'
-    """
-    data = flask.request
-    try:
-        values, pers_model_id, model = process_json(data, model_id, action='create')
-        response = requests.post(f'{models_host}/create', json={
-            'model_name': pers_model_id,
-            'model_type': model[0],
-            'params': model[1]
-        })
-    except ValueError as e:
-        return jsonify(message=str(e)), 400
-    except Exception:
-        return jsonify(message='Model API didn\'t respond'), 400
-    return response.json(), response.status_code
 
 
 @app.route('/models/delete/<model_id>', methods=['DELETE'])
@@ -240,6 +193,8 @@ def delete_model(model_id):
 
 
 @app.route('/datasets/load/<df_name>', methods=['POST'])
+@metrics.summary('load_length', 'Time by response code',
+                 labels={'status': lambda resp: resp.status_code})
 def load_dataset(df_name):
     """Load new dataset
     ---
@@ -313,9 +268,12 @@ def load_dataset(df_name):
     return jsonify(message='OK'), 200
 
 
-@app.route('/models/train/<model_id>', methods=['PUT'])
-def train_model(model_id):
-    """Train model
+@app.route('/models/create_and_train/<model_id>', methods=['POST'])
+@metrics.summary('model_creation_length', 'Time by response code',
+                 labels={'status': lambda resp: resp.status_code})
+@metrics.gauge('in_progress', 'Requests in progress')
+def create_and_train_model(model_id):
+    """Creates and trains new model
     ---
     parameters:
       - name: model_id
@@ -329,6 +287,15 @@ def train_model(model_id):
         schema:
           type: object
           properties:
+            model_type:
+              type: string
+              example: DecisionTreeClassifier
+            params:
+              type: object
+              properties:
+                model_parameter:
+                  type: string
+              example: {max_depth: 3}
             user_id:
               type: string
               example: 123456
@@ -345,39 +312,35 @@ def train_model(model_id):
               type: string
               example: 'OK'
       400:
-        description: Train process failed
+        description: Some input data was bad
         schema:
           type: object
           properties:
             message:
               type: string
-              example: 'There is no data or df_name in request!'
-      404:
-        description: Model not found
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-              example: 'There is no such model!'
+              example: 'There is no support of model SomeModel yet!'
     """
     data = flask.request
     try:
-        values, pers_model_id, _ = process_json(data, model_id, action='train')
-        response = requests.put(f'{models_host}/train', json={
+        values, pers_model_id, model = process_json(data, model_id, action='create_and_train')
+        response = requests.post(f'{models_host}/create_and_train', json={
+            'model_type': model[0],
+            'params': model[1],
             'name': pers_model_id,
             'values': values
         })
-        return response.json(), response.status_code
     except ValueError as e:
         return jsonify(message=str(e)), 400
     except ModuleNotFoundError as e:
         return jsonify(message=str(e)), 404
     except Exception:
         return jsonify(message='Model API didn\'t respond'), 400
+    return response.json(), response.status_code
 
 
 @app.route('/models/predict/<model_id>')
+@metrics.summary('prediction_length', 'Time by dataframe name',
+                 labels={'status': lambda: request.view_args['df_name']})
 def get_predict(model_id):
     """Get predicts
     ---
@@ -451,4 +414,4 @@ def get_predict(model_id):
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(port=8080)

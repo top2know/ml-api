@@ -5,3 +5,4 @@ Cython==0.29.24
 scikit-learn==1.0.1
 requests==2.26.0
 flasgger==0.9.5
+prometheus_flask_exporter==0.18.6

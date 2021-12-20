@@ -1,3 +1,5 @@
+[![Build Status](https://app.travis-ci.com/top2know/ml-api.svg?branch=master)](https://app.travis-ci.com/top2know/ml-api)
+
 This is my homework for Python Advanced Course, last upd: 09-12-2021
 
 Examples of usage are stored at `examples` folder.

@@ -1,11 +1,4 @@
 services:
-  db:
-    image: postgres:latest
-    ports:
-      - 5432:5432
-    environment:
-      POSTGRES_PASSWORD: 'password'
-
   api_app:
     image: top2know/api_app:0.1
     ports:
@@ -15,3 +8,53 @@ services:
     image: top2know/models_app:0.1
     ports:
       - 5001:5001
+
+  mlflow:
+    command:
+      - "mlflow server --backend-store-uri=sqlite:///ml.db --host=0.0.0.0 --default-artifact-root ./mlartifacts"
+    image: adacotechjp/mlflow:1.22.0
+    ports:
+      - 5000:5000
+    restart: always
+
+    prometheus:
+      image: prom/prometheus:latest
+      ports:
+        - 9090:9090
+      volumes:
+        - ./prometheus.yml:/etc/prometheus/prometheus.yml
+        - ./rules.yml:/etc/prometheus/rules.yml
+      restart: always
+
+    alertmanager:
+      image: prom/alertmanager:latest
+      ports:
+        - 9093:9093
+      volumes:
+        - ./alertmanager_config.yaml:/etc/alertmanager/config.yml
+      links:
+        - prometheus-bot
+      command:
+        - '--config.file=/etc/alertmanager/config.yml'
+        - '--storage.path=/alertmanager'
+      restart: always
+
+    prometheus-bot:
+      image: tienbm90/prometheus-bot:0.0.1
+      volumes:
+        - ./bot_template.tmpl:/etc/telegrambot/template.tmpl
+        - ./bot_config.yaml:/etc/telegrambot/config.yaml
+        - ./bot_config.yaml:/config.yaml
+      ports:
+        - 9087:9087
+      restart: always
+
+    grafana:
+      image: grafana/grafana:latest
+      ports:
+        - 3000:3000
+      volumes:
+        - ./grafana.ini:/etc/grafana/grafana.ini
+      links:
+        - prometheus
+      restart: always

@@ -1,7 +1,8 @@
 from user_models import ModelsManager
 from models.factory import ModelsFactory
 import flask
-from flask import Flask, jsonify, redirect
+from flask import Flask, jsonify
+import numpy as np
 
 mm = ModelsManager()
 mf = ModelsFactory()
@@ -36,7 +37,7 @@ def create_model():
 def get_predict_for_model():
     try:
         name, values = flask.request.json['name'], flask.request.json['values']
-        predicts = list(map(int, mm.get_model(name).predict(values)))
+        predicts = list(map(int, mm.get_model(name).predict(np.array(values))))
     except ValueError as e:
         return jsonify(message=str(e)), 400
     except ModuleNotFoundError as e:
@@ -54,6 +55,26 @@ def train_model():
     try:
         name, values = flask.request.json['name'], flask.request.json['values']
         fitted_model = mm.get_model(name).fit(*values)
+        mm.add_model(name, fitted_model)
+    except ValueError as e:
+        return jsonify(message=str(e)), 400
+    except ModuleNotFoundError as e:
+        return jsonify(message=str(e)), 404
+
+    return jsonify(message='OK'), 200
+
+
+@app.route('/create_and_train', methods=['POST'])
+def create_and_train_model():
+    try:
+        model_type, params, name, values = \
+            flask.request.json['model_type'], \
+            flask.request.json['params'], \
+            flask.request.json['name'], \
+            flask.request.json['values']
+
+        model = mf.get_model(model_type, params)
+        fitted_model = model.fit(*values)
         mm.add_model(name, fitted_model)
     except ValueError as e:
         return jsonify(message=str(e)), 400

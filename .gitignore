@@ -3,3 +3,7 @@ __py*
 config
 *.pickle
 *.DS_Store
+.coverage
+*.coverage
+.pytest_cache/
+*/.pytest_cache/
